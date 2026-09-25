@@ -1,0 +1,1934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Symbol Cards">
+<meta name="theme-color" content="#1B1F3B">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Communicate by Design — Symbol Card Sheet Generator</title>
+<!--
+  ============================================================================
+  Communicate by Design — Symbol Card Sheet Generator
+  ============================================================================
+  Standalone classroom tool. Type words or phrases, pull symbols, print a sheet.
+
+  HOW TO RUN:
+    Double-click this file. It opens in any browser. Nothing to install.
+    Keep it at _Operations/Tools/ so the local symbol cache path resolves.
+
+  SYMBOL SOURCES (in order):
+    1. Local cache  — ../Symbols/symbol_cache/arasaac_{word}.png  (works offline)
+    2. ARASAAC API  — live search, with a fallback chain for multi-word phrases
+    3. Draw-it box  — blank card when no symbol is found
+
+  LICENSE:
+    Pictographic symbols are the property of the Government of Aragón and were
+    created by Sergio Palao for ARASAAC (https://arasaac.org), distributed under
+    CC BY-NC-SA 4.0. Attribution prints on every sheet — do not remove it.
+
+  CARD SPEC (matches the locked Communicate by Design symbol card standard):
+    Symbol image + word label + Fitzgerald Key colored border only.
+    No category bar, no star, no part-of-speech label.
+  ============================================================================
+-->
+<style>
+  :root {
+    --navy:   #1B1F3B;
+    --teal:   #00B4D8;
+    --teal-d: #006DA0;
+    --amber:  #FFB703;
+    --white:  #FFFFFF;
+    --slate:  #94A3B8;
+    --card:   #252A4A;
+    --line:   #3A4068;
+
+    /* Fitzgerald Key border colors — ported from build_nonfiction_symbol_pages.py */
+    --fk-green:  #2E7D32;
+    --fk-orange: #E65100;
+    --fk-yellow: #F57F17;
+    --fk-blue:   #1565C0;
+    --fk-pink:   #880E4F;
+    --fk-white:  #757575;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: var(--navy);
+    color: var(--white);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────────── */
+  header {
+    background: var(--navy);
+    border-bottom: 3px solid var(--amber);
+    padding: 14px 22px;
+    display: flex; align-items: center; gap: 14px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .brand-icon {
+    width: 38px; height: 38px; flex: 0 0 38px;
+    background: var(--amber); border-radius: 9px;
+    display: grid; place-items: center;
+    font-size: 20px; line-height: 1;
+  }
+  .brand h1 { font-size: 17px; letter-spacing: .2px; }
+  .brand p  { font-size: 11.5px; color: var(--slate); margin-top: 2px; }
+  .spacer { flex: 1; }
+
+  /* ── LAYOUT ─────────────────────────────────────────────── */
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px 22px 80px; }
+  .panel {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px; margin-bottom: 18px;
+  }
+  .panel h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 1.1px;
+    color: var(--amber); margin-bottom: 12px;
+  }
+  .hint { font-size: 12px; color: var(--slate); line-height: 1.5; }
+
+  /* ── INPUT ──────────────────────────────────────────────── */
+  textarea {
+    width: 100%; min-height: 84px; resize: vertical;
+    background: #1B1F3B; color: var(--white);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 11px 12px; font: 14px/1.5 Arial, Helvetica, sans-serif;
+  }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--teal); outline-offset: 1px; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 12px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .7px; color: var(--slate);
+  }
+  select, input[type="text"], input[type="number"] {
+    background: #1B1F3B; color: var(--white);
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 8px 10px; font: 13px Arial, Helvetica, sans-serif;
+  }
+  input[type="number"] { width: 68px; }
+
+  button {
+    background: var(--amber); color: var(--navy);
+    border: 0; border-radius: 8px; padding: 10px 18px;
+    font: bold 13px Arial, Helvetica, sans-serif; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+  button.ghost {
+    background: transparent; color: var(--teal);
+    border: 1px solid var(--teal); font-weight: normal;
+  }
+  button.ghost:hover { background: rgba(0,180,216,.12); filter: none; }
+  button.tiny { padding: 5px 9px; font-size: 11.5px; border-radius: 6px; }
+
+  .checks { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+  .checks label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; cursor: pointer; }
+  .checks input { accent-color: var(--teal); width: 15px; height: 15px; }
+
+  /* ── BUILT-IN HELP ──────────────────────────────────────────
+     This file gets emailed to people who have never seen it. The
+     instructions travel inside it so there is no second file to lose. */
+  details.help {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 0; margin-bottom: 18px;
+  }
+  details.help > summary {
+    cursor: pointer; list-style: none; padding: 15px 18px;
+    font: bold 13px Arial, Helvetica, sans-serif;
+    color: var(--amber); text-transform: uppercase; letter-spacing: 1.1px;
+  }
+  details.help > summary::-webkit-details-marker { display: none; }
+  details.help > summary::before { content: '▸ '; }
+  details.help[open] > summary::before { content: '▾ '; }
+  .help-body { padding: 0 18px 18px; font-size: 13px; line-height: 1.65; color: #D8DEF0; }
+  .help-body h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--teal); margin: 14px 0 5px;
+  }
+  .help-body ol, .help-body ul { margin: 0 0 0 20px; }
+  .help-body li { margin-bottom: 5px; }
+  .help-body strong { color: #fff; }
+  .help-body .warn { color: var(--amber); }
+
+
+  /* ── MODE TABS ─────────────────────────────────────────────
+     Two tools, one file. The handoff story ("email one file") is what makes
+     this usable by a para, so a second tool would halve its value. */
+  .modes {
+    display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap;
+  }
+  .modes button {
+    background: transparent; color: var(--slate);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 20px; font: bold 13px Arial, Helvetica, sans-serif;
+  }
+  .modes button[aria-selected="true"] {
+    background: var(--amber); color: var(--navy); border-color: var(--amber);
+  }
+  .modes button:not([aria-selected="true"]):hover {
+    color: var(--white); border-color: var(--teal);
+  }
+
+  /* ── BOARD SETUP ───────────────────────────────────────────
+     Slots are deliberately large on screen. A First-Then board that is hard
+     to read at arm's length has failed before anyone touches it. */
+  .slots { display: flex; gap: 14px; flex-wrap: wrap; }
+  .slot {
+    flex: 1 1 240px; min-width: 240px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: rgba(27,31,59,.55); padding: 14px;
+  }
+  .slot h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .9px;
+    color: var(--teal); margin-bottom: 9px;
+  }
+  .slot-label {
+    width: 100%; font: bold 17px Arial, Helvetica, sans-serif;
+    background: #1B1F3B; color: var(--white);
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 9px 11px; margin-bottom: 10px; text-align: center;
+  }
+  .slot-sym {
+    width: 100%; aspect-ratio: 1; background: #fff; border-radius: 8px;
+    display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); place-items: stretch; overflow: hidden; margin-bottom: 10px;
+  }
+  .slot-sym img { align-self: stretch; justify-self: stretch; width: 100%; height: 100%; object-fit: contain; padding: 6px; }
+  .slot-sym .none { color: #999; font-size: 12px; display: grid; place-items: center; text-align: center; }
+
+  .opt-row { display: flex; gap: 7px; align-items: center; margin-bottom: 7px; }
+  .opt-row .thumb-sm {
+    width: 42px; height: 42px; flex: 0 0 42px; background: #fff;
+    border-radius: 6px; display: grid; place-items: center; overflow: hidden;
+  }
+  .opt-row .thumb-sm img { width: 100%; height: 100%; object-fit: contain; padding: 3px; }
+
+  /* ── PRESENT VIEW (the device / Guided Access view) ────────
+     Full bleed, enormous targets, nothing to mis-tap. */
+  .present {
+    position: fixed; inset: 0; z-index: 9999;
+    background: var(--navy); display: none;
+    flex-direction: column; padding: 2.2vh 2.2vw;
+  }
+  .present.show { display: flex; }
+  .present-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.6vh; flex: 0 0 auto;
+  }
+  .present-head .ttl { font-size: clamp(15px, 2.4vh, 26px); font-weight: bold; color: var(--amber); }
+  .present-exit {
+    background: transparent; color: var(--slate); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 14px; font-size: 12px;
+  }
+  .present-boxes { flex: 1 1 auto; display: flex; gap: 2vw; min-height: 0; }
+  .pbox {
+    flex: 1 1 0; display: flex; flex-direction: column; min-width: 0;
+    background: var(--card); border: 4px solid var(--line); border-radius: 18px;
+    padding: 1.4vh 1.2vw; cursor: pointer;
+  }
+  .pbox.speakable:active { border-color: var(--amber); }
+  .pbox .plabel {
+    flex: 0 0 auto; text-align: center; color: var(--white);
+    font-size: clamp(18px, 4.2vh, 46px); font-weight: bold;
+    letter-spacing: .5px; margin-bottom: 1vh;
+  }
+  .pbox .pimg { flex: 1 1 auto; min-height: 0; background: #fff; border-radius: 12px; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); place-items: stretch; overflow: hidden; }
+  .pbox .pimg img { align-self: stretch; justify-self: stretch; width: 100%; height: 100%; object-fit: contain; padding: 1.2vh; }
+  .pbox .pimg .empty { color: #b9c0d4; font-size: clamp(12px, 2vh, 20px); text-align: center; padding: 10px; display: grid; place-items: center; }
+
+  /* Choice tiles fill the Next box until the student picks. */
+  .choices { flex: 1 1 auto; min-height: 0; display: grid; gap: 1.2vh; grid-template-columns: repeat(auto-fit, minmax(38%, 1fr)); }
+  .choice {
+    background: #fff; border: 4px solid transparent; border-radius: 12px;
+    display: flex; flex-direction: column; cursor: pointer; overflow: hidden; padding: .8vh;
+  }
+  .choice:active { border-color: var(--amber); }
+  .choice .ci { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); place-items: stretch; overflow: hidden; }
+  .choice .ci img { align-self: stretch; justify-self: stretch; width: 100%; height: 100%; object-fit: contain; }
+  .choice .cl { flex: 0 0 auto; text-align: center; color: var(--navy); font-weight: bold; font-size: clamp(11px, 2vh, 22px); }
+
+  .present-foot { flex: 0 0 auto; margin-top: 1.4vh; display: flex; gap: 10px; align-items: center; justify-content: center; }
+  .present-foot button { padding: 11px 22px; font-size: 14px; }
+  .chosen-note { color: var(--amber); font-size: clamp(12px, 2vh, 20px); font-weight: bold; }
+
+
+  /* ── CHOICE LOG ────────────────────────────────────────────
+     Stat tiles, not a chart: a handful of counts over a small set. Numbers
+     wear text tokens; the amber is the label, not the datum. */
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .stat {
+    flex: 1 1 130px; min-width: 130px; background: rgba(27,31,59,.55);
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  }
+  .stat .n { font-size: 26px; font-weight: bold; color: var(--white); line-height: 1.1; }
+  .stat .k {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px;
+    color: var(--slate); margin-top: 4px;
+  }
+  .stat .sub { font-size: 11px; color: var(--slate); margin-top: 3px; }
+
+  .logtab { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .logtab th {
+    text-align: left; color: var(--slate); font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .6px; padding: 6px 8px; border-bottom: 1px solid var(--line);
+  }
+  .logtab td { padding: 7px 8px; border-bottom: 1px solid rgba(58,64,104,.5); }
+  .logtab tr:last-child td { border-bottom: 0; }
+  .logwrap { max-height: 320px; overflow: auto; }
+  .th-sub {
+    display: block; font-size: 9.5px; letter-spacing: .3px;
+    text-transform: none; color: var(--amber); font-weight: normal; margin-top: 2px;
+  }
+  .latency-note {
+    margin-top: 12px; padding: 11px 13px; border-left: 3px solid var(--amber);
+    background: rgba(255,183,3,.07); border-radius: 0 8px 8px 0;
+  }
+  .mark {
+    background: transparent; color: var(--slate); border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 9px; font-size: 11px; cursor: pointer;
+  }
+  .mark[aria-pressed="true"] { background: var(--teal-d); color: #fff; border-color: var(--teal-d); }
+  .mark.warn[aria-pressed="true"] { background: #8a5a00; border-color: #8a5a00; color: #fff; }
+
+  /* Partner controls in the device view: small, low, away from the boxes. */
+  .pmark { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .pmark .lbl { color: var(--slate); font-size: 11px; }
+  .pmark button {
+    background: transparent; color: var(--slate); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 11px; font-size: 12px;
+  }
+  .pmark button[aria-pressed="true"] { background: var(--teal-d); color: #fff; border-color: var(--teal-d); }
+
+  /* ── BOARD PRINT ───────────────────────────────────────────
+     The low-tech version: laminate, velcro, no device required. */
+  .board-shell { background: #fff; border-radius: 12px; padding: .5in; color: #000; }
+  .bprint-title { font-size: 15pt; color: var(--navy); font-weight: bold; margin-bottom: .18in; }
+  .bboxes { display: flex; gap: .25in; }
+  .bbox { flex: 1 1 0; border: 4pt solid var(--navy); border-radius: 10pt; padding: .12in; display: flex; flex-direction: column; }
+  .bbox .bl {
+    text-align: center; font-weight: bold; color: #fff; background: var(--navy);
+    border-radius: 5pt; padding: .07in 0; margin-bottom: .1in;
+  }
+  .bbox .bi { flex: 1 1 auto; min-height: 0; width: 100%; display: grid; place-items: center; overflow: hidden; }
+  .bbox .bi img { max-width: 100%; max-height: 100%; width: auto; height: auto; }
+  .bbox .bi .blank { align-self: stretch; justify-self: stretch; border: 1.5pt dashed #bbb; border-radius: 7pt; }
+  .bcut-h {
+    margin-top: .3in; padding-top: .1in; border-top: 1.5pt dashed #999;
+    font-size: 9pt; color: #444; font-weight: bold;
+  }
+
+  /* ── STATUS BANNER ──────────────────────────────────────── */
+  .banner {
+    border-radius: 9px; padding: 11px 14px; margin-bottom: 16px;
+    font-size: 12.5px; line-height: 1.55; display: none;
+  }
+  .banner.show { display: block; }
+  .banner.warn  { background: rgba(255,183,3,.13); border: 1px solid var(--amber); color: #FFE3A3; }
+  .banner.info  { background: rgba(0,180,216,.12); border: 1px solid var(--teal);  color: #B6ECFA; }
+
+  /* ── WORD LIST EDITOR ───────────────────────────────────── */
+  .item {
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 12px; border: 1px solid var(--line); border-radius: 9px;
+    margin-bottom: 9px; background: rgba(27,31,59,.55);
+  }
+  .thumb {
+    width: 62px; height: 62px; flex: 0 0 62px;
+    background: var(--white); border-radius: 6px;
+    display: grid; place-items: center; overflow: hidden;
+  }
+  .thumb img { max-width: 100%; max-height: 100%; }
+  .thumb .none { font-size: 10px; color: #888; text-align: center; padding: 3px; }
+  .item-body { flex: 1; min-width: 0; }
+  .item-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .item-label {
+    font-size: 15px; font-weight: bold; border: 0; background: transparent;
+    color: var(--white); padding: 3px 6px; border-radius: 5px; min-width: 140px;
+  }
+  .item-label:hover { background: rgba(255,255,255,.07); }
+  .item-meta { font-size: 11.5px; color: var(--slate); margin-top: 5px; }
+  .item-meta code { color: var(--teal); font-size: 11.5px; }
+  .item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; align-items: center; }
+  .copies { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--slate); }
+
+  .alts { display: none; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+  .alts.show { display: flex; }
+  .alt {
+    width: 56px; height: 56px; background: var(--white); border: 2px solid transparent;
+    border-radius: 6px; padding: 3px; cursor: pointer; display: grid; place-items: center;
+  }
+  .alt:hover { border-color: var(--teal); }
+  .alt.sel { border-color: var(--amber); }
+  .alt img { max-width: 100%; max-height: 100%; }
+
+  /* ── SHEET PREVIEW ──────────────────────────────────────── */
+  .sheet-shell {
+    background: var(--white); border-radius: 12px; padding: 0.5in;
+    color: #000; overflow-x: auto;
+  }
+  .sheet { width: 7.5in; margin: 0 auto; }
+  .sheet-head { margin-bottom: .22in; }
+  .sheet-head h3 { font-size: 15pt; color: var(--navy); }
+  .sheet-head .fields {
+    margin-top: .1in; font-size: 10pt; color: #333;
+    display: flex; gap: .35in; flex-wrap: wrap;
+  }
+  .sheet-head .fields span { border-bottom: 1px solid #999; min-width: 2in; padding-bottom: 1px; }
+
+  /* font-size:0 removes the whitespace gaps between inline-block cards.
+     orphans/widows:1 is load-bearing — the browser default of 2 forces two rows
+     of cards onto the next page whenever the last row does not fit, silently
+     throwing away a whole printable row. */
+  .cards { font-size: 0; orphans: 1; widows: 1; }
+
+  .pcard {
+    background: #fff; overflow: hidden;
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+    vertical-align: top;
+    break-inside: avoid; page-break-inside: avoid;
+    padding: 0.05in;
+  }
+  /* min-height:0 lets the symbol zone shrink; the label keeps its natural height.
+     No hard-coded heights — the card's padding and border are absorbed automatically,
+     so every border style and card size lays out correctly. */
+  .pcard .sym { flex: 1 1 auto; min-height: 0; width: 100%; display: grid; place-items: center; overflow: hidden; }
+  .pcard .sym img { width: 100%; height: 100%; object-fit: contain; }
+  .pcard .drawit {
+    width: 100%; height: 100%; border: 1px dashed #bbb; border-radius: 3px;
+    display: grid; place-items: center; color: #aaa; font-size: 7pt;
+  }
+  .pcard .lbl {
+    flex: 0 0 auto; width: 100%; text-align: center; color: var(--navy);
+    font-weight: bold; line-height: 1.1; padding-top: 0.03in;
+    overflow-wrap: break-word;
+  }
+  .attrib {
+    margin-top: .16in; padding-top: .07in; border-top: 1px solid #ddd;
+    font-size: 6.5pt; color: #666; line-height: 1.35;
+  }
+  .empty-state { color: #888; font-size: 13px; padding: 30px; text-align: center; }
+
+  /* ── PRINT ──────────────────────────────────────────────── */
+  @page { size: letter portrait; margin: 0.5in; }
+  @media print {
+    body { background: #fff; color: #000; }
+    /* .panel at any depth — the mode wrappers mean these are no longer
+       direct children of .wrap, and a child selector silently printed the
+       whole UI onto the sheet. */
+    header, .panel, .banner, .noprint { display: none !important; }
+    .wrap { max-width: none; padding: 0; margin: 0; }
+    .sheet-shell { padding: 0; border-radius: 0; }
+    .sheet { width: 100%; }
+    .pcard { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    /* One file, two printable outputs — print whichever mode is open. */
+    .modes, .present { display: none !important; }
+    body.board-mode .sheet-shell { display: none !important; }
+    body:not(.board-mode) .board-shell { display: none !important; }
+    .board-shell { padding: 0; border-radius: 0; }
+    .bbox { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body.board-mode .attrib { position: static; padding-bottom: 0; }
+
+    /* The ARASAAC attribution is required on every printed sheet. In flow it
+       takes a page of its own whenever the cards happen to fill the last page
+       exactly. Fixed, it costs no flow space, prints on every page, and never
+       forces a break — the matching padding below keeps cards clear of it. */
+    .attrib {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      margin: 0; background: #fff;
+    }
+    .cards { padding-bottom: 0.30in; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand-icon">💬</div>
+  <div class="brand">
+    <h1>Symbol Card Sheet Generator</h1>
+    <p>Communicate by Design · type words → pull symbols → print</p>
+  </div>
+  <div class="spacer"></div>
+  <button class="noprint" onclick="window.print()">Print sheet</button>
+</header>
+
+<div class="wrap">
+
+  <div class="modes noprint" role="tablist">
+    <button role="tab" aria-selected="true"  onclick="setMode('print')" id="tab-print">Print symbol cards</button>
+    <button role="tab" aria-selected="false" onclick="setMode('board')" id="tab-board">First–Then board</button>
+  </div>
+
+  <details class="help noprint" id="help">
+    <summary>How to use this</summary>
+    <div class="help-body">
+      <p>Type words. Get a page of picture cards. Cut them out. That is the whole tool.</p>
+
+      <h3>Making a sheet</h3>
+      <ol>
+        <li>Type your words in the box below — one per line, or separated by commas.</li>
+        <li>Click <strong>Add words</strong>. A picture is found for each one.</li>
+        <li>If a picture is wrong, click <strong>Other symbols</strong> on that card and pick a
+            better one, or type a different word in the small search box. The printed label
+            stays whatever you typed.</li>
+        <li>Set the card size and how much space you want for cutting.</li>
+        <li>Click <strong>Print sheet</strong>.</li>
+      </ol>
+
+      <h3 class="warn">One thing that matters when you print</h3>
+      <p>In the print window, set <strong>Scale</strong> to <strong>100%</strong> — not
+         "Fit to page." Fit to page shrinks everything, and the cards stop being the size
+         they say they are.</p>
+
+      <h3>Good to know</h3>
+      <ul>
+        <li><strong>You need internet</strong> the first time you look up a word — that is how
+            the pictures are found.</li>
+        <li><strong>Nothing is saved anywhere but your own browser.</strong> No account, no
+            upload, no student information leaves this page. The only thing sent out is the
+            vocabulary word itself, to look up a picture for it.</li>
+        <li><strong>Card borders are colored by word type</strong> — green for actions, gray for
+            things, yellow for people, orange for describing words, blue for little words, pink
+            for social words. Cut apart, the color helps show how words fit together.</li>
+        <li><strong>Check the student's own system first.</strong> If they already use a device,
+            book, or cards, match those pictures where you can. A student who learned one
+            picture for "break" should not have to learn a second one.</li>
+        <li>A student may select a card, point to it, use gaze to indicate it, hand it to you,
+            or answer some other way entirely. All of it counts.</li>
+      </ul>
+
+      <h3>The First–Then board (second tab)</h3>
+      <p>Two boxes: what is happening now, and what comes next. Print it and laminate it,
+         or open it on a device where tapping a box says it out loud.</p>
+      <ul>
+        <li><strong>Labels are yours to set.</strong> First / Then, Now / Next, or your own
+            words. Use whatever this student already knows — a student who learned one
+            wording should not have to learn a second.</li>
+        <li><strong>Two different jobs.</strong> With the adult setting both boxes, the board
+            tells a student what is coming — it helps with transitions, and it is not the
+            student communicating. Turn on <em>let the student choose what comes next</em> and
+            the second box becomes something else entirely: the student is now telling
+            <em>you</em> something.</li>
+        <li><strong>If they choose, honor it.</strong> A choice that gets overridden teaches
+            that choosing does not matter, which is the opposite of the point.</li>
+        <li><strong>Two to six options.</strong> More than six stops being a choice and starts
+            being a search.</li>
+        <li><strong>On an iPad:</strong> add the page to the Home Screen first, then turn on
+            Guided Access. Opening a downloaded file directly in Safari works but is fiddly.</li>
+      </ul>
+
+      <h3>The choice log</h3>
+      <p>When a student picks something, it is recorded — the word, the time, what it was
+         chosen from, and how long it took. It is a record of <strong>what they
+         communicated</strong>, not a score.</p>
+      <ul>
+        <li><strong>Nothing is marked right or wrong</strong>, because there is no correct
+            answer to a choice. You will not find an accuracy figure anywhere in this tool.</li>
+        <li><strong>Mark it spontaneous or prompted</strong> from the buttons under the board.
+            Language becoming self-initiated is the thing worth watching over months.</li>
+        <li><strong>"Could not" is about the room, not the student.</strong> If choices often
+            cannot be honored, the options on the board are the thing to change.</li>
+        <li><strong>"Took" is not a target.</strong> Time usually shortens as a board becomes
+            familiar, but a long pause is often a student weighing two things they want, and a
+            fast tap can be a reach for whatever was nearest. Watch it across weeks in the same
+            setup, never coach for speed, and when it shifts look at what changed around the
+            student first.</li>
+        <li><strong>It stays on this device.</strong> Nothing is uploaded. The CSV is written
+            only when you click Export. Use initials or a code, not a full name. The CSV has no
+            room for the note above — if you hand the file to someone, hand them the note too.</li>
+      </ul>
+
+      <h3>If the pictures do not appear</h3>
+      <p>You are probably offline, or a school network is blocking the picture site. Cards will
+         still print as empty boxes you can draw in. Reconnect and click
+         <strong>Retry lookups</strong>.</p>
+    </div>
+  </details>
+
+  <div id="banner" class="banner"></div>
+
+  <div id="mode-print">
+
+  <!-- ── WORDS ─────────────────────────────────────────── -->
+  <div class="panel">
+    <h2>1 · Words</h2>
+    <textarea id="input" placeholder="back stretch, hand rub, squeezes&#10;&#10;One per line, or separated by commas."></textarea>
+    <div class="row">
+      <button onclick="addWords()">Add words</button>
+      <button class="ghost" onclick="retryAll()">Retry lookups</button>
+      <button class="ghost" onclick="clearAll()">Clear all</button>
+      <div class="spacer"></div>
+      <div class="field">
+        <label for="preset">Quick sets</label>
+        <select id="preset" onchange="loadPreset(this.value)">
+          <option value="">Choose a set…</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:10px">
+      Multi-word phrases work. If ARASAAC has no symbol for the whole phrase, the
+      search falls back to the main word — <code>back stretch</code> finds
+      <em>stretch</em>, <code>squeezes</code> finds <em>squeeze</em> — and the card
+      keeps the label you typed.
+    </p>
+  </div>
+
+  <!-- ── CARDS ─────────────────────────────────────────── -->
+  <div class="panel">
+    <h2>2 · Cards <span id="count" style="color:var(--slate);font-weight:normal;text-transform:none;letter-spacing:0"></span></h2>
+    <div id="list"></div>
+    <p id="listEmpty" class="hint">No cards yet. Add words above.</p>
+  </div>
+
+  <!-- ── SHEET OPTIONS ─────────────────────────────────── -->
+  <div class="panel">
+    <h2>3 · Sheet</h2>
+    <div class="row">
+      <div class="field">
+        <label for="size">Card size</label>
+        <select id="size" onchange="save();render()">
+          <option value="1">1" × 1"</option>
+          <option value="1.5" selected>1.5" × 1.5"</option>
+          <option value="2">2" × 2"</option>
+          <option value="2.5">2.5" × 2.5"</option>
+          <option value="3">3" × 3"</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="case">Label style</label>
+        <select id="case" onchange="save();render()">
+          <option value="upper" selected>ALL CAPS</option>
+          <option value="lower">lowercase</option>
+          <option value="title">Title Case</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="gap">Cutting space</label>
+        <select id="gap" onchange="save();render()">
+          <option value="0.0625">Tight — 1/16"</option>
+          <option value="0.1875" selected>Standard — 3/16"</option>
+          <option value="0.3125">Wide — 5/16"</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="border">Border</label>
+        <select id="border" onchange="save();render()">
+          <option value="fk" selected>Fitzgerald Key color</option>
+          <option value="black">Black</option>
+          <option value="gray">Light gray (cut guide)</option>
+          <option value="none">None</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="title">Sheet title</label>
+        <input type="text" id="title" placeholder="e.g. Movement Break Choices"
+               oninput="save();render()" style="width:220px">
+      </div>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="showLabels" checked onchange="save();render()"> Show word labels</label>
+      <label><input type="checkbox" id="showHead"   checked onchange="save();render()"> Show sheet header + Name/Date</label>
+    </div>
+    <div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+      <button class="ghost" onclick="exportForGoogleDocs()">Export for Google Docs</button>
+      <p class="hint" style="flex:1;min-width:240px">
+        Saves an <code>.html</code> file. In Google Drive: <strong>New → File upload</strong>, then
+        right-click it → <strong>Open with → Google Docs</strong>. The symbols come across as real
+        images and the cards stay 1.5". Share it with your team like any other Doc.
+      </p>
+    </div>
+  </div>
+
+  <!-- ── PREVIEW ───────────────────────────────────────── -->
+  <div class="panel noprint" style="padding-bottom:8px">
+    <h2>4 · Print preview</h2>
+    <p class="hint">This is exactly what prints. Set your browser's print scale to 100% —
+      not "Fit to page" — or the cards will not measure true.</p>
+  </div>
+  <div class="sheet-shell">
+    <div class="sheet" id="sheet"></div>
+  </div>
+
+  </div><!-- /mode-print -->
+
+  <!-- ══ FIRST–THEN BOARD ══════════════════════════════════ -->
+  <div id="mode-board" hidden>
+
+    <div class="panel noprint">
+      <h2>1 · Board</h2>
+      <div class="row">
+        <div class="field">
+          <label for="bStyle">Labels</label>
+          <select id="bStyle" onchange="applyStyle()">
+            <option value="first">First / Then</option>
+            <option value="now">Now / Next</option>
+            <option value="now3">Now / Next / Then</option>
+            <option value="custom">Custom — type your own</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="bTitle">Board title (optional)</label>
+          <input type="text" id="bTitle" placeholder="e.g. Morning routine"
+                 oninput="saveBoard();renderBoardPrint()" style="width:220px">
+        </div>
+        <div class="spacer"></div>
+        <div class="field">
+          <label for="bPreset">Quick boards</label>
+          <select id="bPreset" onchange="loadBoardPreset(this.value)">
+            <option value="">Choose…</option>
+          </select>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:10px">
+        No single label is standard — <strong>First / Then</strong> is most common in ABA practice,
+        <strong>Now / Next</strong> in UK and structured-teaching settings. Match whatever this
+        student already uses. A student who learned one wording should not have to learn a second.
+      </p>
+      <div class="checks">
+        <label><input type="checkbox" id="bChoice" onchange="saveBoard();renderBoard()">
+          Let the student choose what comes next</label>
+        <label><input type="checkbox" id="bSpeak" checked onchange="saveBoard()">
+          Speak the label when a box is tapped</label>
+      </div>
+    </div>
+
+    <div class="panel noprint">
+      <h2>2 · Slots</h2>
+      <div class="slots" id="slots"></div>
+    </div>
+
+    <div class="panel noprint" id="choicePanel" hidden>
+      <h2>3 · Choices <span style="color:var(--slate);font-weight:normal;text-transform:none;letter-spacing:0">· what the student picks from</span></h2>
+      <textarea id="bOpts" placeholder="iPad, bubbles, swing, music&#10;&#10;2 to 6 options, one per line or comma separated."></textarea>
+      <div class="row">
+        <button onclick="addOptions()">Add options</button>
+        <button class="ghost" onclick="clearOptions()">Clear</button>
+      </div>
+      <div id="optList" style="margin-top:12px"></div>
+      <p class="hint" style="margin-top:8px">
+        A choice is only a choice if it is honored. If the selection gets overridden, the board
+        is teaching that choosing does not matter — the opposite of what it is for.
+      </p>
+    </div>
+
+    <div class="panel noprint">
+      <h2>4 · Use it</h2>
+      <div class="row">
+        <button onclick="presentBoard()">Open on this device</button>
+        <button class="ghost" onclick="window.print()">Print the board</button>
+        <div class="field">
+          <label for="bSize">Printed size</label>
+          <select id="bSize" onchange="saveBoard();renderBoardPrint()">
+            <option value="full" selected>Full page — wall or table</option>
+            <option value="half">Half page — desk or binder</option>
+          </select>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:10px">
+        <strong>On a device:</strong> opens full screen. To lock an iPad to it, add the page to the
+        Home Screen first, then turn on Guided Access. <strong>Printed:</strong> laminate it and add
+        velcro — the choice options print as loose cards underneath. Works with no device at all.
+      </p>
+    </div>
+
+    <div class="panel noprint">
+      <h2>5 · Choice log <span style="color:var(--slate);font-weight:normal;text-transform:none;letter-spacing:0">· what the student communicated</span></h2>
+      <div class="stats" id="logStats"></div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field">
+          <label for="logWho">Whose log (optional)</label>
+          <input type="text" id="logWho" placeholder="initials or a code" style="width:180px"
+                 oninput="try{localStorage.setItem('cbd_log_who',this.value)}catch(e){}">
+        </div>
+        <div class="spacer"></div>
+        <button class="ghost" onclick="exportLog()">Export CSV</button>
+        <button class="ghost" onclick="clearLog()">Clear log</button>
+      </div>
+      <div class="logwrap"><table class="logtab" id="logTable"></table></div>
+      <p class="hint latency-note">
+        <strong>About "Took":</strong> this is not a target, and faster is not better. Time
+        usually shortens as a board becomes familiar, so it is worth watching across weeks in
+        the same setup — but a long pause is often a student weighing two things they genuinely
+        want, and a very quick tap can be a reach for whatever was nearest rather than a choice.
+        If it changes suddenly, look at what changed around the student — new options, a
+        different partner, a noisier room, symbols in new positions — before reading anything
+        into the number. <strong>Never coach for speed.</strong>
+      </p>
+      <p class="hint" style="margin-top:10px">
+        This log stays in this browser on this device. Nothing is uploaded, and the CSV is
+        only written when you click Export. Use initials or a code rather than a full name.
+      </p>
+      <p class="hint" style="margin-top:6px">
+        It records <strong>what was communicated</strong> — the word, when, what it was chosen
+        from, and how long it took — not whether the student was right. There is no correct
+        answer to a choice. <strong>Honored</strong> is a check on the room, not on the student:
+        if choices often cannot be honored, the option set is the thing to change.
+      </p>
+    </div>
+
+    <div class="panel noprint" style="padding-bottom:8px">
+      <h2>6 · Print preview</h2>
+      <p class="hint">Print at 100%, not "Fit to page."</p>
+    </div>
+    <div class="board-shell">
+      <div id="boardPrint"></div>
+    </div>
+
+  </div><!-- /mode-board -->
+
+</div>
+
+<!-- ══ PRESENT (full screen) ═══════════════════════════════ -->
+<div class="present noprint" id="present">
+  <div class="present-head">
+    <div class="ttl" id="presentTitle"></div>
+    <button class="present-exit" onclick="exitPresent()">Close</button>
+  </div>
+  <div class="present-boxes" id="presentBoxes"></div>
+  <div class="present-foot">
+    <span class="chosen-note" id="chosenNote"></span>
+    <div class="pmark" id="pmark" hidden>
+      <span class="lbl">Was it:</span>
+      <button id="mSpon" onclick="markLast('initiation','spontaneous')" aria-pressed="false">Spontaneous</button>
+      <button id="mProm" onclick="markLast('initiation','prompted')"    aria-pressed="false">Prompted</button>
+      <span class="lbl" style="margin-left:10px">Outcome:</span>
+      <button id="mHon"  onclick="markLast('outcome','honored')"   aria-pressed="false">Honored</button>
+      <button id="mNot"  onclick="markLast('outcome','could_not')" aria-pressed="false">Could not</button>
+    </div>
+    <button class="ghost" id="resetChoice" onclick="resetChoice()" hidden>Choose again</button>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   CONFIG
+   ══════════════════════════════════════════════════════════════════════ */
+
+// Local symbol cache, relative to this file at _Operations/Tools/
+const LOCAL_CACHE = null;   // hosted copy: no cache folder beside it
+
+const ARASAAC_SEARCH = 'https://api.arasaac.org/v1/pictograms/en/search/';
+const ARASAAC_IMG    = 'https://static.arasaac.org/pictograms/';
+const ARASAAC_ATTRIB =
+  'Pictographic symbols used are the property of the Government of Aragón and have been ' +
+  'created by Sergio Palao for ARASAAC (https://arasaac.org), distributed under CC BY-NC-SA 4.0.';
+
+const STORAGE_KEY = 'cbd_pecs_sheet_v1';
+
+const PRESETS = {
+  'Movement & sensory breaks': ['back stretch','hand rub','squeezes','deep breath','wall push','jumping','walk','swing','rocking','heavy work','quiet corner','weighted blanket'],
+  'Core starter words':        ['I','want','more','stop','go','help','like','not','look','all done','turn','my'],
+  'Feelings':                  ['happy','sad','angry','tired','scared','excited','sick','calm','frustrated','proud'],
+  'Break & regulation choices':['break','water','bathroom','music','headphones','fidget','lights off','sit','stand','help me'],
+  'Classroom requests':        ['help','question','bathroom','water','pencil','finished','wait','my turn','again','different'],
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   FITZGERALD KEY
+   Ported from _Operations/Build/fitzgerald_key.js (GENERAL sets), with a
+   movement/sensory extension so break-menu verbs classify as actions
+   instead of defaulting to noun.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const FK = {
+  yellow: new Set(['i','you','he','she','we','they','my','your','our','their','who','someone','everyone','people','human','me','him','his','us','it','friend','teacher','mom','dad','nurse','name']),
+  green:  new Set(['think','feel','know','want','need','help','stop','fight','change','show','prove','mean','say','tell','believe','make','do','go','get','give','like','live','care','move','swim','learn','die','protect','paint','lie','approve','deny','claim','review','test','occupy','demand','sign','agree','disagree','crawl','protest','verify','organize','contradict','cause','read','write','work','use','find','try','put','take','see','look','hear','play','come','turn','open','close','start','begin','finish','keep','bring','send','build','break','grow','eat','drink','sleep','walk','stand','sit','wait','watch','listen','talk','speak','ask','answer','explain','describe','compare','analyze','evaluate','identify','observe','support','include','follow','choose','decide','create','share','connect','push','pull',
+    // movement / sensory / regulation extension
+    'stretch','rub','squeeze','press','breathe','jump','march','roll','wiggle','shake','swing','bounce','hug','tap','lift','carry','climb','rock','spin','crash','massage','brush','wash','blow','chew','drum','clap','stomp','reach','bend','twist','relax','calm',
+    'scratch','tickle','pat','poke','squish','knead','compress','swing','sway','wrap','hold','rest']),
+  orange: new Set(['good','bad','right','wrong','different','same','more','less','true','false','strong','weak','big','small','little','free','safe','sick','healthy','wild','dangerous','reliable','accessible','new','old','important','best','hard','easy','long','short','fast','slow','happy','sad','angry','afraid','sure','ready','able','enough','many','few','all','some','every','each','tired','scared','excited','frustrated','proud','loud','quiet','heavy','deep','soft','hot','cold']),
+  blue:   new Set(['because','before','after','then','first','last','but','if','about','and','that','which','when','where','today','now','here','there','in','on','at','up','down','to','from','with','for','of','by','into','out','over','under','between','through','during','until','while','also','too','next','again','still','already','always','never','sometimes','or','so']),
+  pink:   new Set(['yes','no','please','thank','thanks','sorry','hi','hello','bye','why','what','how','question','okay','ok','wow','done','finished','all done','my turn','help me','break']),
+};
+
+const FK_COLOR = {
+  yellow: '#F57F17', green: '#2E7D32', orange: '#E65100',
+  blue:   '#1565C0', pink:  '#880E4F', white: '#757575',
+};
+
+// Classify on the whole phrase first, then on its head word.
+function fkCategory(phrase) {
+  const p = String(phrase).toLowerCase().trim();
+  const tryWord = (w) => {
+    for (const cat of ['yellow','green','orange','blue','pink']) if (FK[cat].has(w)) return cat;
+    return null;
+  };
+  let hit = tryWord(p);
+  if (hit) return hit;
+  const words = p.split(/[\s\-_]+/).filter(Boolean);
+  for (let i = words.length - 1; i >= 0; i--) {
+    hit = tryWord(words[i]) || tryWord(singular(words[i]));
+    if (hit) return hit;
+  }
+  return 'white';
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   SEARCH TERM FALLBACK CHAIN
+   "back stretch" → back stretch, stretch, back
+   "squeezes"     → squeezes, squeeze
+   ══════════════════════════════════════════════════════════════════════ */
+
+const STOPWORDS = new Set(['a','an','the','my','your','our','their','some','of','to','and','is','are']);
+
+// Order matters. Only strip "es" where the base genuinely ends in s/z/x/ch/sh
+// (glasses, boxes, watches) — otherwise a plain -s plural like "squeezes"
+// gets over-stripped to "squeez" and finds nothing.
+function singular(w) {
+  if (/ies$/.test(w) && w.length > 4)           return w.slice(0, -3) + 'y'; // bunnies  -> bunny
+  if (/(sses|shes|ches|xes|zzes)$/.test(w))     return w.slice(0, -2);        // glasses  -> glass
+  if (/s$/.test(w) && !/(ss|us|is)$/.test(w))   return w.slice(0, -1);        // squeezes -> squeeze
+  return w;
+}
+
+function searchTerms(phrase) {
+  const p = String(phrase).toLowerCase().trim();
+  const terms = [p];
+  const words = p.split(/[\s\-_]+/).filter(Boolean);
+  const content = words.filter(w => !STOPWORDS.has(w));
+  if (content.length && content.join(' ') !== p) terms.push(content.join(' '));
+  for (let i = content.length - 1; i >= 0; i--) {
+    terms.push(content[i]);
+    const s = singular(content[i]);
+    if (s !== content[i]) terms.push(s);
+  }
+  const sp = singular(p);
+  if (sp !== p) terms.push(sp);
+  return [...new Set(terms.filter(Boolean))];
+}
+
+function slug(s) { return String(s).toLowerCase().trim().replace(/[\s\-]+/g, '_').replace(/[^a-z0-9_]/g, ''); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   SYMBOL LOOKUP
+   ══════════════════════════════════════════════════════════════════════ */
+
+let apiReachable = null;   // null = untested, true/false once known
+
+// Try to load a file from the local cache. Resolves to a URL or null.
+function probeLocal(term) {
+  return new Promise(resolve => {
+    if (!LOCAL_CACHE) return resolve(null);
+    const url = LOCAL_CACHE + 'arasaac_' + slug(term) + '.png';
+    const img = new Image();
+    img.onload  = () => resolve(img.naturalWidth > 0 ? url : null);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+async function arasaacSearch(term) {
+  const res = await fetch(ARASAAC_SEARCH + encodeURIComponent(term), { mode: 'cors' });
+  if (!res.ok) return [];
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.map(p => p._id).filter(Boolean);
+}
+
+function imgUrl(id) { return ARASAAC_IMG + id + '/' + id + '_500.png'; }
+
+// Full resolution: local cache first, then ARASAAC down the fallback chain.
+async function resolveSymbol(item) {
+  const terms = searchTerms(item.term || item.label);
+
+  // Local cache first — this is the offline path, and it is faster than the network.
+  for (const t of terms) {
+    const local = await probeLocal(t);
+    if (local) return { url: local, candidates: [], matched: t, source: 'cache' };
+  }
+
+  // Once ARASAAC is known unreachable, stop retrying it on every word.
+  if (apiReachable === false) {
+    return { url: null, candidates: [], matched: null, source: 'offline' };
+  }
+
+  for (const t of terms) {
+    try {
+      const ids = await arasaacSearch(t);
+      apiReachable = true;
+      if (ids.length) {
+        return {
+          url: imgUrl(ids[0]),
+          candidates: ids.slice(0, 12).map(imgUrl),
+          matched: t,
+          source: 'arasaac',
+        };
+      }
+    } catch (e) {
+      apiReachable = false;
+      return { url: null, candidates: [], matched: null, source: 'offline' };
+    }
+  }
+  return { url: null, candidates: [], matched: null, source: 'none' };
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   STATE
+   ══════════════════════════════════════════════════════════════════════ */
+
+let items = [];
+let nextId = 1;
+
+function addWords() {
+  const raw = document.getElementById('input').value;
+  const words = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  if (!words.length) return;
+  document.getElementById('input').value = '';
+  for (const w of words) {
+    const item = { id: nextId++, label: w, term: '', copies: 1, url: null,
+                   candidates: [], matched: null, source: 'loading', altsOpen: false };
+    items.push(item);
+    lookup(item);
+  }
+  render();
+}
+
+async function lookup(item) {
+  item.source = 'loading';
+  render();
+  const r = await resolveSymbol(item);
+  Object.assign(item, r);
+  save();
+  render();
+}
+
+function loadPreset(name) {
+  if (!name) return;
+  document.getElementById('preset').value = '';
+  document.getElementById('input').value = PRESETS[name].join('\n');
+  addWords();
+}
+
+// Re-run every lookup from scratch — use after fixing a connection, or after
+// dropping new PNGs into the local symbol cache.
+function retryAll() {
+  apiReachable = null;
+  for (const it of items) {
+    if (it.source !== 'cache' && !it.candidates.length) lookup(it);
+  }
+}
+
+function clearAll() {
+  if (items.length && !confirm('Remove all cards from this sheet?')) return;
+  items = [];
+  save(); render();
+}
+
+function removeItem(id) { items = items.filter(i => i.id !== id); save(); render(); }
+function setCopies(id, v) {
+  const it = items.find(i => i.id === id);
+  it.copies = Math.max(1, Math.min(60, parseInt(v) || 1));
+  save(); render();
+}
+function setLabel(id, v)  { items.find(i => i.id === id).label = v; save(); render(); }
+function setTerm(id, v)   { const it = items.find(i => i.id === id); it.term = v.trim(); lookup(it); }
+function toggleAlts(id)   { const it = items.find(i => i.id === id); it.altsOpen = !it.altsOpen; render(); }
+function pickAlt(id, idx) {
+  const it = items.find(i => i.id === id);
+  if (!it.candidates || !it.candidates[idx]) return;
+  it.url = it.candidates[idx];
+  it.altsOpen = false;
+  save(); render();
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   PERSISTENCE
+   ══════════════════════════════════════════════════════════════════════ */
+
+function opts() {
+  return {
+    size:       document.getElementById('size').value,
+    gap:        document.getElementById('gap').value,
+    labelCase:  document.getElementById('case').value,
+    border:     document.getElementById('border').value,
+    title:      document.getElementById('title').value,
+    showLabels: document.getElementById('showLabels').checked,
+    showHead:   document.getElementById('showHead').checked,
+  };
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, opts: opts() }));
+  } catch (e) { /* private browsing — sheet still works, just not remembered */ }
+}
+
+function restore() {
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) {}
+  if (!data) return;
+  if (Array.isArray(data.items)) {
+    items = data.items;
+    nextId = items.reduce((m, i) => Math.max(m, i.id), 0) + 1;
+  }
+  const o = data.opts || {};
+  if (o.size)      document.getElementById('size').value  = o.size;
+  if (o.gap)       document.getElementById('gap').value   = o.gap;
+  if (o.labelCase) document.getElementById('case').value  = o.labelCase;
+  if (o.border)    document.getElementById('border').value= o.border;
+  if (o.title)     document.getElementById('title').value = o.title;
+  if (o.showLabels !== undefined) document.getElementById('showLabels').checked = o.showLabels;
+  if (o.showHead   !== undefined) document.getElementById('showHead').checked   = o.showHead;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   FIRST–THEN BOARD
+
+   A second tool sharing this file's symbol engine. Two jobs that are NOT
+   the same thing, and the difference matters:
+
+   - A First–Then board is a RECEPTIVE support. The adult sets both slots.
+     It tells a student what is happening and what comes next. It is not
+     the student communicating.
+   - A choice board is EXPRESSIVE communication. The student selects. That
+     is a request, a preference, a decision.
+
+   Turning on "let the student choose" converts the second slot from the
+   first into the second. Honor what they pick.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const BOARD_KEY = 'cbd_board_v1';
+
+const LABEL_STYLES = {
+  first: ['First', 'Then'],
+  now:   ['Now', 'Next'],
+  now3:  ['Now', 'Next', 'Then'],
+};
+
+// Quick boards drawn from routines these teams actually run.
+const BOARD_PRESETS = {
+  'Work then break':      { style:'first', slots:['work','break'],            choice:false, opts:[] },
+  'Work then choice':     { style:'first', slots:['work',''],                 choice:true,  opts:['iPad','bubbles','swing','music'] },
+  'Reading lesson':       { style:'now3',  slots:['read','answer','finished'],choice:false, opts:[] },
+  'Clean up then choose': { style:'now',   slots:['clean up',''],             choice:true,  opts:['outside','blocks','book','snack'] },
+  'Sensory break':        { style:'first', slots:['','break'],                choice:true,  opts:['squeezes','stretch','swing','quiet corner'] },
+};
+
+let board = {
+  style: 'first',
+  title: '',
+  labels: ['First', 'Then'],
+  slots:  [ blankSlot(), blankSlot() ],
+  choice: false,
+  speak:  true,
+  size:   'full',
+  opts:   [],        // [{id,label,term,url,source}]
+  chosen: null,      // index into opts once a student picks
+};
+let optId = 1;
+
+function blankSlot() { return { word:'', term:'', url:null, source:'idle', candidates:[], altsOpen:false }; }
+
+/* ── mode switching ──────────────────────────────────────────────────── */
+
+function setMode(m) {
+  const isBoard = (m === 'board');
+  document.getElementById('mode-print').hidden = isBoard;
+  document.getElementById('mode-board').hidden = !isBoard;
+  document.getElementById('tab-print').setAttribute('aria-selected', String(!isBoard));
+  document.getElementById('tab-board').setAttribute('aria-selected', String(isBoard));
+  document.body.classList.toggle('board-mode', isBoard);   // routes @media print
+  try { localStorage.setItem('cbd_mode', m); } catch (e) {}
+  if (isBoard) { renderBoard(); renderBoardPrint(); }
+}
+
+/* ── setup ───────────────────────────────────────────────────────────── */
+
+function applyStyle() {
+  const v = document.getElementById('bStyle').value;
+  board.style = v;
+  if (v !== 'custom') {
+    board.labels = LABEL_STYLES[v].slice();
+    const want = board.labels.length;
+    while (board.slots.length < want) board.slots.push(blankSlot());
+    board.slots.length = want;
+  }
+  saveBoard(); renderBoard(); renderBoardPrint();
+}
+
+function setSlotLabel(i, v) { board.labels[i] = v; saveBoard(); renderBoardPrint(); }
+
+function setSlotWord(i, v) {
+  const sl = board.slots[i];
+  sl.word = v.trim();
+  if (!sl.word) { Object.assign(sl, blankSlot()); saveBoard(); renderBoard(); renderBoardPrint(); return; }
+  lookupInto(sl, sl.word);
+}
+
+function setSlotTerm(i, v) {
+  const sl = board.slots[i];
+  sl.term = v.trim();
+  lookupInto(sl, sl.term || sl.word);
+}
+
+// Reuses resolveSymbol — same cache-then-ARASAAC path, same fallback chain.
+async function lookupInto(target, phrase) {
+  target.source = 'loading';
+  renderBoard();
+  const r = await resolveSymbol({ label: phrase, term: target.term || '' });
+  Object.assign(target, { url: r.url, candidates: r.candidates, matched: r.matched, source: r.source });
+  saveBoard(); renderBoard(); renderBoardPrint();
+}
+
+function toggleSlotAlts(i) { board.slots[i].altsOpen = !board.slots[i].altsOpen; renderBoard(); }
+function pickSlotAlt(i, idx) {
+  const sl = board.slots[i];
+  if (sl.candidates && sl.candidates[idx]) { sl.url = sl.candidates[idx]; sl.altsOpen = false; }
+  saveBoard(); renderBoard(); renderBoardPrint();
+}
+
+/* ── choice options ──────────────────────────────────────────────────── */
+
+function addOptions() {
+  const raw = document.getElementById('bOpts').value;
+  const words = raw.split(/[\n,]+/).map(x => x.trim()).filter(Boolean);
+  if (!words.length) return;
+  document.getElementById('bOpts').value = '';
+  for (const w of words) {
+    if (board.opts.length >= 6) break;          // more than six is a field, not a choice
+    const o = { id: optId++, label: w, term: '', url: null, source: 'loading', candidates: [] };
+    board.opts.push(o);
+    lookupInto(o, w);
+  }
+  saveBoard(); renderBoard();
+}
+
+function removeOption(id) { board.opts = board.opts.filter(o => o.id !== id); saveBoard(); renderBoard(); renderBoardPrint(); }
+function clearOptions()   { board.opts = []; board.chosen = null; saveBoard(); renderBoard(); renderBoardPrint(); }
+
+function loadBoardPreset(name) {
+  if (!name) return;
+  document.getElementById('bPreset').value = '';
+  const p = BOARD_PRESETS[name];
+  board.style  = p.style;
+  board.labels = LABEL_STYLES[p.style].slice();
+  board.choice = p.choice;
+  board.slots  = p.slots.map(() => blankSlot());
+  board.opts   = [];
+  board.chosen = null;
+  document.getElementById('bStyle').value  = p.style;
+  document.getElementById('bChoice').checked = p.choice;
+  document.getElementById('bTitle').value   = name;
+  board.title = name;
+  p.slots.forEach((w, i) => { if (w) { board.slots[i].word = w; lookupInto(board.slots[i], w); } });
+  for (const w of (p.opts || [])) {
+    const o = { id: optId++, label: w, term: '', url: null, source: 'loading', candidates: [] };
+    board.opts.push(o); lookupInto(o, w);
+  }
+  saveBoard(); renderBoard(); renderBoardPrint();
+}
+
+/* ── speech ──────────────────────────────────────────────────────────────
+   Built-in browser speech: no audio files, and iOS voices are on-device so
+   it works with no connection. iOS will not speak until a real tap has
+   happened, so the first tap primes it. */
+
+let speechPrimed = false;
+function primeSpeech() {
+  if (speechPrimed || !('speechSynthesis' in window)) return;
+  try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); speechPrimed = true; } catch (e) {}
+}
+function say(text) {
+  if (!board.speak || !text || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(String(text));
+    u.rate = 0.9;                                  // a touch slower reads better aloud
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+/* ── persistence ─────────────────────────────────────────────────────── */
+
+function saveBoard() {
+  board.title = document.getElementById('bTitle').value;
+  board.choice = document.getElementById('bChoice').checked;
+  board.speak  = document.getElementById('bSpeak').checked;
+  board.size   = document.getElementById('bSize').value;
+  try { localStorage.setItem(BOARD_KEY, JSON.stringify(board)); } catch (e) {}
+}
+
+function restoreBoard() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(BOARD_KEY) || 'null'); } catch (e) {}
+  if (!d) return;
+  board = Object.assign(board, d);
+  if (!Array.isArray(board.slots) || !board.slots.length) board.slots = [blankSlot(), blankSlot()];
+  if (!Array.isArray(board.labels)) board.labels = ['First','Then'];
+  optId = board.opts.reduce((m,o) => Math.max(m, o.id||0), 0) + 1;
+  document.getElementById('bStyle').value   = board.style || 'first';
+  document.getElementById('bTitle').value   = board.title || '';
+  document.getElementById('bChoice').checked= !!board.choice;
+  document.getElementById('bSpeak').checked = board.speak !== false;
+  document.getElementById('bSize').value    = board.size || 'full';
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   RENDER
+   ══════════════════════════════════════════════════════════════════════ */
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+function castLabel(text, mode) {
+  if (mode === 'upper') return text.toUpperCase();
+  if (mode === 'lower') return text.toLowerCase();
+  return text.replace(/\w\S*/g, w => w[0].toUpperCase() + w.slice(1).toLowerCase());
+}
+
+function borderFor(item, mode) {
+  if (mode === 'none')  return '0';
+  if (mode === 'black') return '2.5pt solid #000';
+  if (mode === 'gray')  return '0.75pt dashed #B0B0B0';
+  return '3pt solid ' + FK_COLOR[fkCategory(item.term || item.label)];
+}
+
+function renderList() {
+  const list  = document.getElementById('list');
+  const empty = document.getElementById('listEmpty');
+  document.getElementById('count').textContent =
+    items.length ? '· ' + items.length + ' word' + (items.length > 1 ? 's' : '') : '';
+  empty.style.display = items.length ? 'none' : 'block';
+
+  list.innerHTML = items.map(it => {
+    let thumb;
+    if (it.source === 'loading')  thumb = '<div class="none">…</div>';
+    else if (it.url)              thumb = '<img src="' + esc(it.url) + '" alt="">';
+    else                          thumb = '<div class="none">no symbol</div>';
+
+    let meta;
+    if (it.source === 'loading')      meta = 'Searching…';
+    else if (it.source === 'cache')   meta = 'From local cache · matched <code>' + esc(it.matched) + '</code>';
+    else if (it.source === 'arasaac') meta = 'From ARASAAC · matched <code>' + esc(it.matched) + '</code>';
+    else if (it.source === 'offline') meta = 'No connection to ARASAAC — prints as a draw-it box.';
+    else                              meta = 'No symbol found — prints as a draw-it box. Try a different search word below.';
+
+    const alts = (it.candidates || []).map((u, idx) =>
+      '<div class="alt' + (u === it.url ? ' sel' : '') + '" onclick="pickAlt(' + it.id + ',' + idx + ')">' +
+      '<img src="' + esc(u) + '" alt=""></div>').join('');
+
+    return '' +
+      '<div class="item">' +
+        '<div class="thumb">' + thumb + '</div>' +
+        '<div class="item-body">' +
+          '<div class="item-top">' +
+            '<input class="item-label" value="' + esc(it.label) + '" ' +
+                   'onchange="setLabel(' + it.id + ', this.value)" title="Label printed on the card">' +
+          '</div>' +
+          '<div class="item-meta">' + meta + '</div>' +
+          '<div class="item-actions">' +
+            (it.candidates && it.candidates.length > 1
+              ? '<button class="ghost tiny" onclick="toggleAlts(' + it.id + ')">Other symbols (' + it.candidates.length + ')</button>'
+              : '') +
+            '<input type="text" placeholder="search a different word" value="' + esc(it.term) + '" ' +
+                   'onchange="setTerm(' + it.id + ', this.value)" style="width:190px;font-size:12px;padding:5px 8px">' +
+            '<span class="copies">copies ' +
+              '<input type="number" min="1" max="60" value="' + it.copies + '" ' +
+                     'onchange="setCopies(' + it.id + ', this.value)"></span>' +
+            '<button class="ghost tiny" onclick="removeItem(' + it.id + ')">Remove</button>' +
+          '</div>' +
+          '<div class="alts' + (it.altsOpen ? ' show' : '') + '">' + alts + '</div>' +
+        '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function renderSheet() {
+  const o    = opts();
+  const size = parseFloat(o.size);
+  const sheet = document.getElementById('sheet');
+
+  if (!items.length) {
+    sheet.innerHTML = '<div class="empty-state">Add words to build a sheet.</div>';
+    return;
+  }
+
+  // Label size scales with the card. Heights are left to flexbox.
+  const labelPt = Math.max(6, Math.round(size * 6.2));
+  const gap     = parseFloat(o.gap);   // white space left between cards for scissors
+
+  let head = '';
+  if (o.showHead) {
+    head =
+      '<div class="sheet-head">' +
+        (o.title ? '<h3>' + esc(o.title) + '</h3>' : '') +
+        '<div class="fields"><span>Name</span><span>Date</span></div>' +
+      '</div>';
+  }
+
+  let cards = '';
+  for (const it of items) {
+    const border = borderFor(it, o.border);
+    const sym = it.url
+      ? '<img src="' + esc(it.url) + '" alt="' + esc(it.label) + '">'
+      : '<div class="drawit">draw it</div>';
+    const lbl = o.showLabels
+      ? '<div class="lbl" style="font-size:' + labelPt + 'pt">' +
+          esc(castLabel(it.label, o.labelCase)) + '</div>'
+      : '';
+    const card =
+      '<div class="pcard" style="width:' + size + 'in;height:' + size + 'in;border:' + border +
+        ';margin:0 ' + gap + 'in ' + gap + 'in 0">' +
+        '<div class="sym">' + sym + '</div>' + lbl +
+      '</div>';
+    for (let c = 0; c < it.copies; c++) cards += card;
+  }
+
+  sheet.innerHTML =
+    head +
+    '<div class="cards">' + cards + '</div>' +
+    '<div class="attrib">' + esc(ARASAAC_ATTRIB) + '<br>' +
+      'Sheet generated with the Communicate by Design Symbol Card Sheet Generator.</div>';
+}
+
+function renderBanner() {
+  const b = document.getElementById('banner');
+  const anyOffline = items.some(i => i.source === 'offline');
+  if (anyOffline) {
+    b.className = 'banner warn show';
+    b.innerHTML =
+      '<strong>ARASAAC could not be reached.</strong> Cards fall back to the local symbol cache, ' +
+      'and anything not cached prints as a draw-it box. Check your connection, then edit a ' +
+      'search word to retry. If you are online and this persists, your browser is blocking the ' +
+      'request from a local file — open the folder in a terminal and run ' +
+      '<code>python3 -m http.server 8000</code>, then visit ' +
+      '<code>localhost:8000/_Operations/Tools/cbd-pecs-sheet-generator.html</code>.';
+    return;
+  }
+  const anyNone = items.some(i => i.source === 'none');
+  if (anyNone) {
+    b.className = 'banner info show';
+    b.innerHTML =
+      'Some words have no ARASAAC match. Type a different search word on those cards — ' +
+      'the printed label stays what you typed.';
+    return;
+  }
+  b.className = 'banner';
+}
+
+function render() { renderList(); renderSheet(); renderBanner(); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   BOARD RENDER
+   ══════════════════════════════════════════════════════════════════════ */
+
+function symStatus(o) {
+  if (o.source === 'loading') return 'Searching…';
+  if (o.source === 'cache')   return 'From local cache';
+  if (o.source === 'arasaac') return 'From ARASAAC · matched <code>' + esc(o.matched || '') + '</code>';
+  if (o.source === 'offline') return 'No connection — prints as a blank box.';
+  if (o.source === 'none')    return 'No symbol found — try a different word.';
+  return 'Type a word below.';
+}
+
+function renderBoard() {
+  const wrap = document.getElementById('slots');
+  const isChoiceSlot = i => board.choice && i === board.slots.length - 1;
+
+  wrap.innerHTML = board.slots.map((sl, i) => {
+    if (isChoiceSlot(i)) {
+      return '<div class="slot">' +
+        '<h3>Slot ' + (i+1) + ' — the student chooses</h3>' +
+        '<input class="slot-label" value="' + esc(board.labels[i] || '') + '" ' +
+               'onchange="setSlotLabel(' + i + ', this.value)">' +
+        '<div class="slot-sym"><div class="none">filled by the student<br>from your choices</div></div>' +
+        '<p class="hint">Add the options below.</p>' +
+      '</div>';
+    }
+    const img = sl.source === 'loading' ? '<div class="none">…</div>'
+              : sl.url ? '<img src="' + esc(sl.url) + '" alt="">'
+              : '<div class="none">no symbol yet</div>';
+    const alts = (sl.candidates || []).map((u, idx) =>
+      '<div class="alt' + (u === sl.url ? ' sel' : '') + '" onclick="pickSlotAlt(' + i + ',' + idx + ')">' +
+      '<img src="' + esc(u) + '" alt=""></div>').join('');
+    return '<div class="slot">' +
+      '<h3>Slot ' + (i+1) + '</h3>' +
+      '<input class="slot-label" value="' + esc(board.labels[i] || '') + '" ' +
+             'onchange="setSlotLabel(' + i + ', this.value)">' +
+      '<div class="slot-sym">' + img + '</div>' +
+      '<input type="text" placeholder="what goes here — e.g. work" value="' + esc(sl.word) + '" ' +
+             'onchange="setSlotWord(' + i + ', this.value)" style="width:100%;margin-bottom:7px">' +
+      '<div class="item-meta">' + symStatus(sl) + '</div>' +
+      '<div class="item-actions">' +
+        (sl.candidates && sl.candidates.length > 1
+          ? '<button class="ghost tiny" onclick="toggleSlotAlts(' + i + ')">Other symbols (' + sl.candidates.length + ')</button>' : '') +
+        '<input type="text" placeholder="search a different word" value="' + esc(sl.term) + '" ' +
+               'onchange="setSlotTerm(' + i + ', this.value)" style="width:170px;font-size:12px;padding:5px 8px">' +
+      '</div>' +
+      '<div class="alts' + (sl.altsOpen ? ' show' : '') + '">' + alts + '</div>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('choicePanel').hidden = !board.choice;
+
+  document.getElementById('optList').innerHTML = board.opts.map(o =>
+    '<div class="opt-row">' +
+      '<div class="thumb-sm">' + (o.url ? '<img src="' + esc(o.url) + '" alt="">'
+                                        : '<span style="font-size:9px;color:#999">' +
+                                          (o.source === 'loading' ? '…' : 'none') + '</span>') + '</div>' +
+      '<strong style="flex:1">' + esc(o.label) + '</strong>' +
+      '<button class="ghost tiny" onclick="removeOption(' + o.id + ')">Remove</button>' +
+    '</div>').join('') ||
+    '<p class="hint">No options yet. Two to six works best — more than six stops being a choice.</p>';
+}
+
+/* ── printed board ───────────────────────────────────────────────────── */
+
+function renderBoardPrint() {
+  const host = document.getElementById('boardPrint');
+  if (!host) return;
+  const n    = board.slots.length;
+  const tall = board.size === 'half' ? 2.6 : 4.4;       // inches of symbol height
+  const lab  = board.size === 'half' ? 15 : 22;         // pt
+
+  const boxes = board.slots.map((sl, i) => {
+    const isChoice = board.choice && i === n - 1;
+    const inner = isChoice ? '<div class="blank"></div>'
+                : sl.url   ? '<img src="' + esc(sl.url) + '" alt="">'
+                : '<div class="blank"></div>';
+    // Height on the BOX; the image area flexes into the remainder. An explicit
+    // height on the image area itself does not survive printing.
+    return '<div class="bbox" style="height:' + (tall + 0.85).toFixed(2) + 'in">' +
+      '<div class="bl" style="font-size:' + lab + 'pt">' + esc(board.labels[i] || '') + '</div>' +
+      '<div class="bi">' + inner + '</div>' +
+    '</div>';
+  }).join('');
+
+  // Choice options print as loose cards to velcro on.
+  let cut = '';
+  if (board.choice && board.opts.length) {
+    // Give each card as much room as the count allows, so the set always
+    // stays on one row instead of spilling a lone card onto page 2.
+    const gap = 0.1875;
+    // every card carries a right margin, the last one included, so the row
+    // width is n*(w+gap) — not n*w + (n-1)*gap.
+    // 7.44 not 7.50 — landing exactly on the content width lets rounding
+    // wrap the last card onto a page of its own.
+    const cw  = Math.min(2, 7.44 / board.opts.length - gap);
+    const cards = board.opts.map(o =>
+      '<div class="pcard" style="width:' + cw.toFixed(3) + 'in;height:' + cw.toFixed(3) + 'in;border:3pt solid ' +
+        FK_COLOR[fkCategory(o.term || o.label)] + ';margin:0 0.1875in 0.1875in 0">' +
+        '<div class="sym">' + (o.url ? '<img src="' + esc(o.url) + '" alt="">'
+                                     : '<div class="drawit">draw it</div>') + '</div>' +
+        '<div class="lbl" style="font-size:' + Math.max(7, Math.round(cw * 5.5)) + 'pt">' +
+          esc(castLabel(o.label, 'upper')) + '</div>' +
+      '</div>').join('');
+    cut = '<div class="bcut-h">Cut out and velcro onto the ' +
+          esc(board.labels[n-1] || 'choice') + ' box</div>' +
+          '<div class="cards" style="padding-top:.12in">' + cards + '</div>';
+  }
+
+  host.innerHTML =
+    (board.title ? '<div class="bprint-title">' + esc(board.title) + '</div>' : '') +
+    '<div class="bboxes">' + boxes + '</div>' + cut +
+    '<div class="attrib">' + esc(ARASAAC_ATTRIB) + '</div>';
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   PRESENT — the device view
+   ══════════════════════════════════════════════════════════════════════ */
+
+function presentBoard() {
+  primeSpeech();
+  board.chosen = null;
+  document.getElementById('presentTitle').textContent = board.title || board.labels.join(' → ');
+  document.getElementById('present').classList.add('show');
+  renderPresent();
+  const el = document.documentElement;
+  if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+}
+
+function exitPresent() {
+  document.getElementById('present').classList.remove('show');
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+  try { speechSynthesis.cancel(); } catch (e) {}
+}
+
+function renderPresent() {
+  const n = board.slots.length;
+  const host = document.getElementById('presentBoxes');
+
+  host.innerHTML = board.slots.map((sl, i) => {
+    const isChoice = board.choice && i === n - 1;
+    const label = esc(board.labels[i] || '');
+
+    // Choice slot, nothing picked yet -> show the options as big tiles.
+    if (isChoice && board.chosen === null) {
+      const tiles = board.opts.map((o, oi) =>
+        '<div class="choice" onclick="chooseOption(' + oi + ')">' +
+          '<div class="ci">' + (o.url ? '<img src="' + esc(o.url) + '" alt="' + esc(o.label) + '">'
+                                      : '<span style="color:#999">?</span>') + '</div>' +
+          '<div class="cl">' + esc(castLabel(o.label, 'upper')) + '</div>' +
+        '</div>').join('');
+      return '<div class="pbox"><div class="plabel">' + label + '</div>' +
+             (board.opts.length ? '<div class="choices">' + tiles + '</div>'
+                                : '<div class="pimg"><div class="empty">Add choices in step 3</div></div>') +
+             '</div>';
+    }
+
+    const src = isChoice ? (board.opts[board.chosen] || {}) : sl;
+    const cap = isChoice ? castLabel(src.label || '', 'upper') : '';
+    const img = src.url ? '<img src="' + esc(src.url) + '" alt="">'
+                        : '<div class="empty">no symbol</div>';
+    return '<div class="pbox speakable" onclick="speakBox(' + i + ')">' +
+             '<div class="plabel">' + label + (cap ? ' · ' + esc(cap) : '') + '</div>' +
+             '<div class="pimg">' + img + '</div>' +
+           '</div>';
+  }).join('');
+
+  const note = document.getElementById('chosenNote');
+  const reset = document.getElementById('resetChoice');
+  const pm = document.getElementById('pmark');
+  if (board.choice && board.chosen !== null) {
+    note.textContent = 'Chose: ' + (board.opts[board.chosen] || {}).label;
+    reset.hidden = false; if (pm) pm.hidden = false;
+  } else {
+    note.textContent = ''; reset.hidden = true; if (pm) pm.hidden = true;
+    if (board.choice) choicesShownAt = Date.now();   // latency clock starts now
+  }
+}
+
+function speakBox(i) {
+  primeSpeech();
+  const n = board.slots.length;
+  const isChoice = board.choice && i === n - 1;
+  const src = isChoice ? (board.opts[board.chosen] || {}) : board.slots[i];
+  say((board.labels[i] || '') + (src.label || src.word ? ', ' + (src.label || src.word) : ''));
+}
+
+// The student picked. Say it back — the same auditory confirmation loop the
+// UFLI lessons use — then leave it standing. Honor it.
+function chooseOption(oi) {
+  primeSpeech();
+  board.chosen = oi;
+  const o = board.opts[oi] || {};
+  logChoice(o);
+  renderPresent();
+  syncMarkButtons();
+  say((board.labels[board.slots.length - 1] || '') + ', ' + (o.label || ''));
+}
+
+function resetChoice() {
+  // A revision is still communication — mark the superseded act rather than
+  // deleting it, so the record shows the student refining a message.
+  if (choiceLog.length) { choiceLog[choiceLog.length - 1].revised = true; persistLog(); renderLog(); }
+  board.chosen = null;
+  renderPresent();
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   CHOICE LOG
+
+   What gets measured here is language growth, not compliance. A choice has
+   no correct answer, so nothing is scored right or wrong and there is no
+   accuracy figure anywhere in this file.
+
+   Recorded per communicative act:
+     word        what the student said
+     options     what it was said from — a choice of two is not a choice of six
+     latency     how long from the options appearing to the tap
+     initiation  spontaneous or prompted — is language becoming self-initiated
+     outcome     honored, or could not be
+
+   "Outcome" audits the room, not the student. A board where choices often
+   cannot be honored has the wrong options on it.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const LOG_KEY = 'cbd_choice_log_v1';
+let choiceLog = [];
+let choicesShownAt = 0;          // set when the tiles render, for latency
+
+function loadLog() {
+  try { choiceLog = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); } catch (e) { choiceLog = []; }
+  if (!Array.isArray(choiceLog)) choiceLog = [];
+  try { document.getElementById('logWho').value = localStorage.getItem('cbd_log_who') || ''; } catch (e) {}
+}
+function persistLog() {
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(choiceLog.slice(-500))); } catch (e) {}
+}
+
+function logChoice(o) {
+  let who = '';
+  try { who = document.getElementById('logWho').value.trim(); } catch (e) {}
+  choiceLog.push({
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    ts: new Date().toISOString(),
+    who,
+    word: o.label || '',
+    options: board.opts.map(x => x.label),
+    latencyMs: choicesShownAt ? (Date.now() - choicesShownAt) : null,
+    board: board.title || board.labels.join('/'),
+    initiation: 'unmarked',
+    outcome: 'unmarked',
+    revised: false,
+  });
+  persistLog(); renderLog();
+}
+
+// The adult marks the act from the device view; the student's side stays clean.
+function markLast(field, value) {
+  if (!choiceLog.length) return;
+  const e = choiceLog[choiceLog.length - 1];
+  e[field] = (e[field] === value) ? 'unmarked' : value;
+  persistLog(); renderLog(); syncMarkButtons();
+}
+
+function syncMarkButtons() {
+  const e = choiceLog[choiceLog.length - 1] || {};
+  const set = (id, on) => { const b = document.getElementById(id); if (b) b.setAttribute('aria-pressed', String(!!on)); };
+  set('mSpon', e.initiation === 'spontaneous');
+  set('mProm', e.initiation === 'prompted');
+  set('mHon',  e.outcome === 'honored');
+  set('mNot',  e.outcome === 'could_not');
+}
+
+function clearLog() {
+  if (choiceLog.length && !confirm('Delete all ' + choiceLog.length + ' logged choices? This cannot be undone.')) return;
+  choiceLog = []; persistLog(); renderLog();
+}
+
+function exportLog() {
+  if (!choiceLog.length) { alert('Nothing logged yet.'); return; }
+  const head = ['when','who','chose','chosen_from','seconds_to_choose','board','initiation','outcome','revised'];
+  const rows = choiceLog.map(e => [
+    e.ts, e.who || '', e.word, (e.options || []).join(' | '),
+    e.latencyMs == null ? '' : (e.latencyMs / 1000).toFixed(1),
+    e.board || '', e.initiation, e.outcome, e.revised ? 'yes' : 'no',
+  ]);
+  const esc = v => '"' + String(v).replace(/"/g, '""') + '"';
+  const csv = [head, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'choice log ' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function renderLog() {
+  const host = document.getElementById('logStats');
+  const tab  = document.getElementById('logTable');
+  if (!host || !tab) return;
+
+  const n     = choiceLog.length;
+  const words = new Set(choiceLog.map(e => (e.word || '').toLowerCase()).filter(Boolean));
+  const init  = choiceLog.filter(e => e.initiation !== 'unmarked');
+  const spon  = init.filter(e => e.initiation === 'spontaneous').length;
+  const out   = choiceLog.filter(e => e.outcome !== 'unmarked');
+  const hon   = out.filter(e => e.outcome === 'honored').length;
+  const pct   = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+
+  host.innerHTML =
+    tile(n, 'Communicative acts', n ? 'logged on this device' : 'nothing yet') +
+    tile(words.size, 'Different words', 'vocabulary diversity') +
+    tile(pct(spon, init.length), 'Spontaneous', init.length ? spon + ' of ' + init.length + ' marked' : 'none marked yet') +
+    tile(pct(hon, out.length),  'Honored',     out.length  ? hon  + ' of ' + out.length  + ' marked' : 'none marked yet');
+
+  if (!n) { tab.innerHTML = ''; return; }
+  const rows = choiceLog.slice().reverse().slice(0, 40).map(e => {
+    const t = new Date(e.ts);
+    const when = t.toLocaleDateString() + ' ' + t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const secs = e.latencyMs == null ? '—' : (e.latencyMs / 1000).toFixed(1) + 's';
+    return '<tr>' +
+      '<td style="white-space:nowrap;color:var(--slate)">' + esc(when) + '</td>' +
+      '<td><strong>' + esc(e.word) + '</strong>' + (e.revised ? ' <span style="color:var(--slate);font-size:11px">(changed)</span>' : '') + '</td>' +
+      '<td style="color:var(--slate)">of ' + (e.options || []).length + '</td>' +
+      '<td style="color:var(--slate)">' + secs + '</td>' +
+      '<td><button class="mark" aria-pressed="' + (e.initiation === 'spontaneous') + '" ' +
+          'onclick="markEntry(\'' + e.id + '\',\'initiation\',\'spontaneous\')">Spontaneous</button></td>' +
+      '<td><button class="mark warn" aria-pressed="' + (e.outcome === 'could_not') + '" ' +
+          'onclick="markEntry(\'' + e.id + '\',\'outcome\',\'could_not\')">Could not</button></td>' +
+    '</tr>';
+  }).join('');
+  tab.innerHTML =
+    '<thead><tr><th>When</th><th>Chose</th><th>From</th>' +
+    '<th>Took<span class="th-sub">not a target</span></th>' +
+    '<th>Self-initiated</th><th>Not honored</th></tr></thead><tbody>' + rows + '</tbody>';
+}
+
+function tile(n, k, sub) {
+  return '<div class="stat"><div class="n">' + esc(String(n)) + '</div>' +
+         '<div class="k">' + esc(k) + '</div><div class="sub">' + esc(sub) + '</div></div>';
+}
+
+function markEntry(id, field, value) {
+  const e = choiceLog.find(x => x.id === id);
+  if (!e) return;
+  e[field] = (e[field] === value) ? 'unmarked' : value;
+  persistLog(); renderLog(); syncMarkButtons();
+}
+
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   GOOGLE DOCS EXPORT
+
+   Google Drive converts an uploaded .html file into a Doc, fetching every
+   remote image and embedding it. Two things that matter:
+
+   - It converts TABLES reliably, not flexbox. The on-screen sheet uses
+     inline-block cards, so the export is serialised separately as a table.
+   - Image sources must be public URLs. A symbol resolved from the local
+     cache is a file path Google cannot reach, so those are looked up on
+     ARASAAC first to get a public URL.
+   ══════════════════════════════════════════════════════════════════════ */
+
+function isLocal(url) { return !!url && url.indexOf('http') !== 0; }
+
+async function exportForGoogleDocs() {
+  const o = opts();
+
+  if (!items.length) { alert('Add some words first.'); return; }
+
+  // Swap local cache paths for public ARASAAC URLs where we can.
+  let unresolved = 0;
+  const resolved = [];
+  for (const it of items) {
+    let url = it.url;
+    if (isLocal(url)) {
+      url = null;
+      for (const t of searchTerms(it.term || it.label)) {
+        try {
+          const ids = await arasaacSearch(t);
+          if (ids.length) { url = imgUrl(ids[0]); break; }
+        } catch (e) { break; }
+      }
+      if (!url) unresolved++;
+    }
+    resolved.push({ label: it.label, url, copies: it.copies, fk: fkCategory(it.term || it.label) });
+  }
+
+  const size    = parseFloat(o.size);
+
+  // Cutting space in a Doc: Google DISCARDS border-spacing (it rewrites the table
+  // to border-collapse:collapse), so the gap has to be real empty columns and rows.
+  // Google also floors a cell at about 20pt, so anything narrower becomes ~0.28in.
+  const gap     = Math.max(0.28, parseFloat(o.gap));
+  const cols    = Math.max(1, Math.floor((6.5 + gap) / (size + gap)));  // Docs default margins = 6.5in
+  const symPx   = Math.round(size * 96 * (o.showLabels ? 0.60 : 0.78));
+  const labelPt = Math.max(6, Math.round(size * 6.2));
+
+  // Expand copies into a flat list of cards, then chunk into table rows.
+  const cards = [];
+  for (const r of resolved) for (let c = 0; c < r.copies; c++) cards.push(r);
+  while (cards.length % cols !== 0) cards.push(null);     // pad the last row
+
+  const cellStyle = (fk) => {
+    const b = o.border === 'none'  ? 'none'
+            : o.border === 'black' ? '3px solid #000000'
+            : o.border === 'gray'  ? '1px solid #B0B0B0'
+            : '3px solid ' + FK_COLOR[fk];
+    return 'width:' + size + 'in;height:' + size + 'in;border:' + b +
+           ';text-align:center;vertical-align:middle;padding:2px';
+  };
+
+  const spacerCell = '<td style="width:' + gap + 'in;border:none"></td>';
+  const spacerRow   = '<tr><td colspan="' + (cols * 2 - 1) +
+                      '" style="height:' + gap + 'in;border:none"></td></tr>';
+
+  let rows = '';
+  for (let i = 0; i < cards.length; i += cols) {
+    const slice = cards.slice(i, i + cols);
+    let tds = '';
+    slice.forEach((c, n) => {
+      if (n > 0) tds += spacerCell;                       // gap between columns
+      if (!c) { tds += '<td style="width:' + size + 'in;border:none"></td>'; return; }
+      const sym = c.url
+        ? '<img src="' + c.url + '" width="' + symPx + '" height="' + symPx + '">'
+        : '<span style="color:#aaa;font-size:8pt">draw it</span>';
+      const lbl = o.showLabels
+        ? '<br><b style="font-size:' + labelPt + 'pt">' + esc(castLabel(c.label, o.labelCase)) + '</b>'
+        : '';
+      tds += '<td style="' + cellStyle(c.fk) + '">' + sym + lbl + '</td>';
+    });
+    if (rows) rows += spacerRow;                          // gap between rows
+    rows += '<tr>' + tds + '</tr>';
+  }
+
+  const head = o.showHead
+    ? (o.title ? '<h1 style="font-size:15pt">' + esc(o.title) + '</h1>' : '') +
+      '<p style="font-size:10pt">Name: ______________________     Date: ______________</p>'
+    : '';
+
+  const html =
+    '<html><head><meta charset="utf-8"><title>' +
+      esc(o.title || 'Symbol Cards') + '</title></head><body>' +
+      head +
+      '<table style="border-collapse:collapse">' + rows + '</table>' +
+      '<p style="font-size:7pt;color:#666">' + esc(ARASAAC_ATTRIB) + '</p>' +
+    '</body></html>';
+
+  const name = (o.title || 'Symbol Cards').replace(/[^\w \-]/g, '').trim() || 'Symbol Cards';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  a.download = name + ' (Google Docs).html';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+
+  if (unresolved) {
+    alert(unresolved + ' card(s) use a symbol from your local cache that Google cannot reach, ' +
+          'and no ARASAAC match was found for them. Those print as draw-it boxes in the Doc. ' +
+          'The printed sheet from this page still shows them correctly.');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   INIT
+   ══════════════════════════════════════════════════════════════════════ */
+
+(function init() {
+  const sel = document.getElementById('preset');
+  for (const name of Object.keys(PRESETS)) {
+    const o = document.createElement('option');
+    o.value = name; o.textContent = name;
+    sel.appendChild(o);
+  }
+  const help = document.getElementById('help');
+  let seen = null;
+  try { seen = localStorage.getItem(STORAGE_KEY + '_help'); } catch (e) {}
+  help.open = (seen !== 'closed');          // a brand-new user sees the instructions
+  help.addEventListener('toggle', () => {
+    try { localStorage.setItem(STORAGE_KEY + '_help', help.open ? 'open' : 'closed'); } catch (e) {}
+  });
+
+  restore();
+  render();
+
+  // Board mode
+  const bp = document.getElementById('bPreset');
+  for (const name of Object.keys(BOARD_PRESETS)) {
+    const o = document.createElement('option');
+    o.value = name; o.textContent = name;
+    bp.appendChild(o);
+  }
+  restoreBoard();
+  loadLog();
+  renderLog();
+  let lastMode = 'print';
+  try { lastMode = localStorage.getItem('cbd_mode') || 'print'; } catch (e) {}
+  setMode(lastMode);
+
+  // iOS will not speak until a genuine tap has happened.
+  document.addEventListener('touchstart', primeSpeech, { once: true });
+  document.addEventListener('mousedown',  primeSpeech, { once: true });
+
+  // Escape leaves the device view.
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('present').classList.contains('show')) exitPresent();
+  });
+  document.getElementById('input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addWords();
+  });
+})();
+</script>
+</body>
+</html>
